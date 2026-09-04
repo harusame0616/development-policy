@@ -144,6 +144,7 @@ jobs:
 ### 実装方法
 
 ファイル変更の検出方法は、ジョブがマージの必須条件に指定されているかどうかで使い分ける。
+turborepo を使用している場合は、後述の `--affected` を使用する。
 
 #### マージの必須条件に指定されていないジョブの場合
 
@@ -191,6 +192,37 @@ jobs:
         if: ${{ steps.filter.outputs.web == 'true' }}
         run: test
 ```
+
+#### turborepo を使用している場合
+
+`turbo run <task> --affected` を使用する。
+変更されたパッケージと、それに依存しているパッケージのタスクのみが実行される。
+
+パスの指定が不要なため、ワークフローと turborepo の依存グラフでパスを二重管理せずに済み、パッケージの追加や依存関係の変更にも自動で追従する。
+
+`paths-ignore` や `dorny/paths-filter` と異なりワークフロー自体は常に起動するため、マージの必須条件に指定するジョブでもそのまま使用できる。
+
+```yaml
+- name: テストの実行
+  run: pnpm turbo run test --affected
+  env:
+    # push では既定の比較先（main）と HEAD が一致し差分ゼロになるため push 前のコミットを基準にする
+    TURBO_SCM_BASE: ${{ github.event_name == 'push' && github.event.before || format('origin/{0}', github.base_ref) }}
+```
+
+変更されたパッケージの判定には全コミット履歴が必要なため、チェックアウト時に `fetch-depth: 0` を指定する。
+判定はファイル名の差分しか参照しないため、`filter: blob:none` でファイルの中身を遅延取得にして取得量を抑える。
+
+```yaml
+- name: リポジトリのチェックアウト
+  uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+    filter: blob:none
+```
+
+なお `pnpm install` までは常に実行されるため、ドキュメントのみの変更でも数分の実行時間が発生する。
+これを避けたい場合は `paths-ignore` / `dorny/paths-filter` と併用する。
 
 ## 8. サードパーティ Actions の SHA ピン留め
 
